@@ -1,0 +1,12 @@
+name: playtime
+version: 1.0
+author: mykyta
+main: gay.kyta.plugin.PlaytimePlugin
+api-version: 1.19
+
+# libraries:
+#   - "org.jetbrains.kotlinx:kotlinx-datetime:0.4.0"
+#   - "org.jetbrains.exposed:exposed-core:0.40.1"
+#   - "org.jetbrains.exposed:exposed-jdbc:0.40.1"
+#   - "org.jetbrains.exposed:exposed-java-time:0.40.1"
+#   - "joda-time:joda-time:2.12.5"

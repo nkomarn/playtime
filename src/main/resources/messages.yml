@@ -1,0 +1,4 @@
+# this file uses adventure mini-message formatting
+# for quick and easy formatting, check out the generator @ https://webui.advntr.dev
+
+command_playtime_response: "Your total playtime is <playtime>!"
