@@ -1,3 +1,5 @@
+@file:Suppress("unused")
+
 package gay.kyta.plugin.playtime.listener
 
 import gay.kyta.plugin.playtime.session.SessionLogger

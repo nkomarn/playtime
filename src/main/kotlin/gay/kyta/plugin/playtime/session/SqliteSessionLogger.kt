@@ -1,12 +1,15 @@
 package gay.kyta.plugin.playtime.session
 
 import gay.kyta.plugin.PlaytimePlugin
-import kotlinx.datetime.Clock
+import gay.kyta.plugin.playtime.fetchPlayerName
+import gay.kyta.plugin.playtime.now
 import kotlinx.datetime.Instant
 import kotlinx.datetime.toJavaInstant
+import org.bukkit.Bukkit
 import org.bukkit.entity.Player
 import org.jetbrains.exposed.dao.id.IntIdTable
 import org.jetbrains.exposed.sql.*
+import org.jetbrains.exposed.sql.javatime.JavaDurationColumnType
 import org.jetbrains.exposed.sql.javatime.duration
 import org.jetbrains.exposed.sql.javatime.timestamp
 import org.jetbrains.exposed.sql.transactions.experimental.newSuspendedTransaction
@@ -28,7 +31,7 @@ class SqliteSessionLogger(plugin: PlaytimePlugin) : SessionLogger {
 
     override suspend fun recordLogin(player: Player) {
         /* record the login time in order to calculate session time at logout */
-        currentSessions[player] = Clock.System.now()
+        currentSessions[player] = now()
     }
 
     override suspend fun recordDisconnect(player: Player) = newSuspendedTransaction {
@@ -38,24 +41,48 @@ class SqliteSessionLogger(plugin: PlaytimePlugin) : SessionLogger {
         Sessions.insert {
             it[Sessions.player] = player.uniqueId
             it[timestamp] = loginTime.toJavaInstant()
-            it[duration] = (Clock.System.now() - loginTime).toJavaDuration()
+            it[duration] = (now() - loginTime).toJavaDuration()
         }
     }
 
     override suspend fun getSessions(player: Player, period: Duration?): List<Duration> = newSuspendedTransaction {
-        val currentSession = Clock.System.now() - currentSessions[player]!!
         var query = Sessions.slice(Sessions.duration)
             .select { Sessions.player eq player.uniqueId }
 
         /* query within a specific period, if specified */
         if (period != null) {
-            val minimumTimestamp = (Clock.System.now() - period).toJavaInstant()
+            val minimumTimestamp = (now() - period).toJavaInstant()
             query = query.andWhere { Sessions.timestamp greaterEq minimumTimestamp }
         }
 
         val previousSessions = query.map { it[Sessions.duration].toKotlinDuration() }
-        return@newSuspendedTransaction previousSessions + currentSession
+        return@newSuspendedTransaction previousSessions + player.currentSession
     }
+
+    /**
+     * - get sum of all sessions for unique player id **that are after a timestamp**
+     * - sort descending
+     */
+    override suspend fun assembleLeaderboard(period: Duration?, quantity: Int): List<LeaderboardPosition> = newSuspendedTransaction {
+        /* query within a specific period, if specified. otherwise, use distant past */
+        val cutOff = if (period == null) Instant.DISTANT_PAST else now() - period
+        val durationSum = Sum(Sessions.duration, JavaDurationColumnType())
+
+        Sessions.slice(Sessions.player, Sessions.timestamp, durationSum)
+            .select { Sessions.timestamp greaterEq cutOff.toJavaInstant() }
+            .orderBy(durationSum)
+            .limit(quantity)
+            .groupBy(Sessions.player)
+            .map {
+                val currentSession = Bukkit.getPlayer(it[Sessions.player])?.currentSession ?: Duration.ZERO
+                val username = it[Sessions.player].fetchPlayerName()
+                val playtime = it[durationSum]!!.toKotlinDuration() + currentSession
+                LeaderboardPosition(username, playtime)
+            }
+    }
+
+    private inline val Player.currentSession
+        get() = now() - currentSessions[this]!!
 }
 
 private object Sessions : IntIdTable() {
