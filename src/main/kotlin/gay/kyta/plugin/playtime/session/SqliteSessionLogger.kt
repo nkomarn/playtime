@@ -41,10 +41,14 @@ class SqliteSessionLogger(plugin: PlaytimePlugin) : SessionLogger {
             SchemaUtils.create(Sessions)
 
             /* migrate sessions from statistics on first startup */
-            if (!Sessions.selectAll().empty()) return@transaction
-            plugin.logger.info("migrating session data from player statistics..")
-            migrateFromStatistics()
-            plugin.logger.info("migration complete!")
+            if (Sessions.selectAll().empty()) {
+                plugin.logger.info("migrating session data from player statistics..")
+                migrateFromStatistics()
+                plugin.logger.info("migration complete!")
+            }
+
+            /* start sessions for any players already online */
+            plugin.server.onlinePlayers.forEach { runBlocking { recordLogin(it) } }
         }
     }
 

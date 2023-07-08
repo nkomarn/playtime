@@ -36,7 +36,7 @@ class PlaytimePlugin : JavaPlugin(), CoroutineScope {
         commandHandler.registerBrigadier()
 
         /* schedule leaderboard updates */
-        server.scheduler.runTaskTimerAsynchronously(this, Runnable { leaderboardCache.refresh() }, 20, 20 * 60)
+        server.scheduler.runTaskTimerAsynchronously(this, Runnable { leaderboardCache.refresh() }, 20 * 15, 20 * 60)
 
         /* hook into placeholder api */
         if (!server.pluginManager.isPluginEnabled("PlaceholderAPI")) return
