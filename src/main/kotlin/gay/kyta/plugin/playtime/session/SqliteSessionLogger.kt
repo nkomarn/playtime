@@ -2,10 +2,16 @@ package gay.kyta.plugin.playtime.session
 
 import gay.kyta.plugin.PlaytimePlugin
 import gay.kyta.plugin.playtime.fetchPlayerName
+import gay.kyta.plugin.playtime.leaderboard.LeaderboardPosition
+import gay.kyta.plugin.playtime.leaderboard.Period
 import gay.kyta.plugin.playtime.now
+import gay.kyta.plugin.playtime.toFirstInstant
+import kotlinx.datetime.Clock
 import kotlinx.datetime.Instant
 import kotlinx.datetime.toJavaInstant
+import kotlinx.datetime.toKotlinInstant
 import org.bukkit.Bukkit
+import org.bukkit.Statistic
 import org.bukkit.entity.Player
 import org.jetbrains.exposed.dao.id.IntIdTable
 import org.jetbrains.exposed.sql.*
@@ -15,8 +21,12 @@ import org.jetbrains.exposed.sql.javatime.timestamp
 import org.jetbrains.exposed.sql.transactions.experimental.newSuspendedTransaction
 import org.jetbrains.exposed.sql.transactions.transaction
 import java.io.File
+import java.time.*
+import java.time.temporal.TemporalAdjusters
+import java.util.Calendar
 import java.util.concurrent.ConcurrentHashMap
 import kotlin.time.Duration
+import kotlin.time.Duration.Companion.seconds
 import kotlin.time.toJavaDuration
 import kotlin.time.toKotlinDuration
 
@@ -26,7 +36,15 @@ class SqliteSessionLogger(plugin: PlaytimePlugin) : SessionLogger {
     init {
         /* set up tables and a connection to our database */
         Database.connect("jdbc:sqlite:${File(plugin.dataFolder, "sessions.db")}", "org.sqlite.JDBC")
-        transaction { SchemaUtils.create(Sessions) }
+        transaction {
+            SchemaUtils.create(Sessions)
+
+            /* migrate sessions from statistics on first startup */
+            if (!Sessions.selectAll().empty()) return@transaction
+            plugin.logger.info("migrating session data from player statistics..")
+            migrateFromStatistics()
+            plugin.logger.info("migration complete!")
+        }
     }
 
     override suspend fun recordLogin(player: Player) {
@@ -45,40 +63,87 @@ class SqliteSessionLogger(plugin: PlaytimePlugin) : SessionLogger {
         }
     }
 
-    override suspend fun getSessions(player: Player, period: Duration?): List<Duration> = newSuspendedTransaction {
+    override suspend fun getSessions(player: Player, period: Period): List<Duration> = newSuspendedTransaction {
         var query = Sessions.slice(Sessions.duration)
             .select { Sessions.player eq player.uniqueId }
 
         /* query within a specific period, if specified */
-        if (period != null) {
-            val minimumTimestamp = (now() - period).toJavaInstant()
-            query = query.andWhere { Sessions.timestamp greaterEq minimumTimestamp }
+        if (period != Period.ALL) {
+            val cutOff = calculateCutOff(period).toJavaInstant()
+            query = query.andWhere { Sessions.timestamp greaterEq cutOff }
         }
 
         val previousSessions = query.map { it[Sessions.duration].toKotlinDuration() }
         return@newSuspendedTransaction previousSessions + player.currentSession
     }
 
+    override suspend fun getCurrentSession(player: Player) = player.currentSession
+
     /**
      * - get sum of all sessions for unique player id **that are after a timestamp**
      * - sort descending
      */
-    override suspend fun assembleLeaderboard(period: Duration?, quantity: Int): List<LeaderboardPosition> = newSuspendedTransaction {
-        /* query within a specific period, if specified. otherwise, use distant past */
-        val cutOff = if (period == null) Instant.DISTANT_PAST else now() - period
-        val durationSum = Sum(Sessions.duration, JavaDurationColumnType())
+    override suspend fun getTopSessions(period: Period, player: Player?, quantity: Int): List<LeaderboardPosition> =
+        newSuspendedTransaction {
+            /* query within a specific period, if specified. otherwise, use distant past */
+            val cutOff = calculateCutOff(period)
+            val durationSum = Sum(Sessions.duration, JavaDurationColumnType())
+            var query = Sessions.slice(Sessions.player, Sessions.timestamp, durationSum)
+                .select { Sessions.timestamp greaterEq cutOff.toJavaInstant() }
 
-        Sessions.slice(Sessions.player, Sessions.timestamp, durationSum)
-            .select { Sessions.timestamp greaterEq cutOff.toJavaInstant() }
-            .orderBy(durationSum)
-            .limit(quantity)
-            .groupBy(Sessions.player)
-            .map {
-                val currentSession = Bukkit.getPlayer(it[Sessions.player])?.currentSession ?: Duration.ZERO
-                val username = it[Sessions.player].fetchPlayerName()
-                val playtime = it[durationSum]!!.toKotlinDuration() + currentSession
-                LeaderboardPosition(username, playtime)
+            /* additionally, filter by player, if specified */
+            if (player != null) {
+                query = query.andWhere { Sessions.player eq player.uniqueId }
             }
+
+            query.orderBy(durationSum, SortOrder.DESC)
+                .limit(quantity)
+                .groupBy(Sessions.player)
+                .map {
+                    val currentSession = Bukkit.getPlayer(it[Sessions.player])?.currentSession ?: Duration.ZERO
+                    val username = it[Sessions.player].fetchPlayerName()
+                    val playtime = it[durationSum]!!.toKotlinDuration() + currentSession
+                    LeaderboardPosition(username, playtime)
+                }
+        }
+
+    override fun shutdown() {
+
+    }
+
+    private fun calculateCutOff(period: Period) = when (period) {
+        Period.YEAR -> Year.now().atDay(1).toFirstInstant()
+        Period.MONTH -> LocalDate.now().withDayOfMonth(1).toFirstInstant()
+        Period.WEEK -> LocalDateTime.now(ZoneId.systemDefault())
+            .with(LocalTime.MIN)
+            .with(TemporalAdjusters.previousOrSame(DayOfWeek.SUNDAY))
+            .atZone(ZoneId.systemDefault())
+            .toInstant()
+            .toKotlinInstant()
+
+        Period.DAY -> LocalDate.now().toFirstInstant()
+        Period.HOUR -> LocalDateTime.now(ZoneId.systemDefault())
+            .withHour(0)
+            .atZone(ZoneId.systemDefault())
+            .toInstant()
+            .toKotlinInstant()
+
+        else -> Instant.DISTANT_PAST
+    }
+
+    private fun migrateFromStatistics() = transaction {
+        val timestamp = now().toJavaInstant()
+
+        for (player in Bukkit.getOfflinePlayers()) {
+            val ticksPlayed = player.getStatistic(Statistic.PLAY_ONE_MINUTE)
+            val durationPlayed = (ticksPlayed / 20).seconds
+
+            Sessions.insert {
+                it[Sessions.player] = player.uniqueId
+                it[Sessions.timestamp] = timestamp
+                it[duration] = durationPlayed.toJavaDuration()
+            }
+        }
     }
 
     private inline val Player.currentSession

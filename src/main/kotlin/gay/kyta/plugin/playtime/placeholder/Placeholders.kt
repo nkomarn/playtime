@@ -1,52 +1,77 @@
 package gay.kyta.plugin.playtime.placeholder
 
+import gay.kyta.plugin.playtime.Formatters
+import gay.kyta.plugin.playtime.leaderboard.LeaderboardCache
+import gay.kyta.plugin.playtime.leaderboard.LeaderboardPosition
+import gay.kyta.plugin.playtime.leaderboard.Period
+import gay.kyta.plugin.playtime.message.MessageContainer
+import gay.kyta.plugin.playtime.message.placeholder
 import gay.kyta.plugin.playtime.render
-import gay.kyta.plugin.playtime.session.LeaderboardCache
-import gay.kyta.plugin.playtime.session.Period
 import gay.kyta.plugin.playtime.session.SessionLogger
 import gay.kyta.plugin.playtime.sum
 import gay.kyta.plugin.playtime.valueOf
 import kotlinx.coroutines.runBlocking
 import me.clip.placeholderapi.expansion.PlaceholderExpansion
+import net.kyori.adventure.text.Component
+import net.kyori.adventure.text.serializer.legacy.LegacyComponentSerializer
 import org.bukkit.entity.Player
 import org.bukkit.plugin.PluginDescriptionFile
-import org.joda.time.format.PeriodFormatter
-import org.joda.time.format.PeriodFormatterBuilder
 
 class Placeholders(
     private val description: PluginDescriptionFile,
     private val sessionLogger: SessionLogger,
     private val leaderboardCache: LeaderboardCache,
+    private val messages: MessageContainer,
 ) : PlaceholderExpansion() {
     override fun getIdentifier() = description.name.lowercase()
     override fun getAuthor() = description.authors.joinToString(", ")
     override fun getVersion() = description.version
     override fun persist() = true
 
-    override fun onPlaceholderRequest(player: Player, params: String): String? {
-        if (params == "self") {
-            return runBlocking { formatter.render(sessionLogger.getSessions(player).sum()) }
-        }
+    override fun onPlaceholderRequest(player: Player?, params: String): String? {
+        val arguments = params.split("_")
+        val category = arguments.getOrNull(0) ?: return null
 
-        if (params.startsWith("leaderboard_")) {
-            val arguments = params.removePrefix("leaderboard_").split("_")
-            val period = arguments.getOrNull(0)?.let { valueOf<Period>(it.uppercase()) } ?: return null
-            val place = arguments.getOrNull(1)?.toIntOrNull() ?: return null
-            val position = leaderboardCache[period].getOrNull(place - 1) ?: return null
-            return "${position.username}, ${formatter.render(position.playtime)}"
-        }
+        return when (category) {
+            "session" -> {
+                if (player == null) return null
+                runBlocking { Formatters.VERBOSE.render(sessionLogger.getCurrentSession(player)) }
+            }
 
-        return null
+            "sessions" -> {
+                if (player == null) return null
+                runBlocking { sessionLogger.getSessions(player, Period.ALL).size }.toString()
+            }
+
+            "self" -> {
+                if (player == null) return null
+                val period = arguments.getOrNull(1)?.let { valueOf<Period>(it) } ?: return null
+                runBlocking { sessionLogger.getSessions(player, period) }.sum()
+                    .let { Formatters.VERBOSE.render(it) }
+            }
+
+            "leaderboard" -> {
+                val period = arguments.getOrNull(1)?.let { valueOf<Period>(it) } ?: return null
+                val place = arguments.getOrNull(2)?.toIntOrNull() ?: return null
+                leaderboardCache[period].getOrNull(place - 1)?.render() ?: return "-"
+            }
+
+            else -> null
+        }
     }
 
+    private fun LeaderboardPosition.render() = messages[
+        "placeholder_leaderboard_position",
+        "username".placeholder(username),
+        "playtime".placeholder(Formatters.VERBOSE.render(playtime))
+    ].serialize
+
     private companion object {
-        val formatter: PeriodFormatter = PeriodFormatterBuilder()
-            .appendDays()
-            .appendSuffix("d")
-            .appendHours()
-            .appendSuffix("h")
-            .appendMinutes()
-            .appendSuffix("m")
-            .toFormatter()
+        val serializer = LegacyComponentSerializer.builder()
+            .useUnusualXRepeatedCharacterHexFormat()
+            .build()
+
+        inline val Component.serialize
+            get() = serializer.serialize(this)
     }
 }

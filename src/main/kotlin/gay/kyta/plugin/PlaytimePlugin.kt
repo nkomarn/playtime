@@ -6,8 +6,8 @@ import gay.kyta.plugin.playtime.message.MessageContainer
 import gay.kyta.plugin.playtime.message.PluginMessageContainer
 import gay.kyta.plugin.playtime.placeholder.Placeholders
 import gay.kyta.plugin.playtime.registerListener
-import gay.kyta.plugin.playtime.session.LeaderboardCache
-import gay.kyta.plugin.playtime.session.SessionLeaderboardCache
+import gay.kyta.plugin.playtime.leaderboard.LeaderboardCache
+import gay.kyta.plugin.playtime.leaderboard.MemoryLeaderboardCache
 import gay.kyta.plugin.playtime.session.SessionLogger
 import gay.kyta.plugin.playtime.session.SqliteSessionLogger
 import kotlinx.coroutines.CoroutineScope
@@ -23,24 +23,25 @@ class PlaytimePlugin : JavaPlugin(), CoroutineScope {
     private lateinit var messages: MessageContainer
     private lateinit var sessionLogger: SessionLogger
     private lateinit var leaderboardCache: LeaderboardCache
+    private lateinit var placeholders: Placeholders
 
     override fun onEnable() {
         commandHandler = BukkitCommandHandler.create(this)
         messages = PluginMessageContainer(this)
         sessionLogger = SqliteSessionLogger(this)
-        leaderboardCache = SessionLeaderboardCache(sessionLogger)
+        leaderboardCache = MemoryLeaderboardCache(sessionLogger)
         registerListener(ConnectionListeners(this, sessionLogger))
 
         /* register commands */
-        commandHandler.register(PlaytimeCommand(this, sessionLogger))
+        commandHandler.register(PlaytimeCommand(this, sessionLogger, leaderboardCache, messages))
         commandHandler.registerBrigadier()
 
         /* schedule leaderboard updates */
-        server.scheduler.runTaskTimerAsynchronously(this, Runnable { leaderboardCache.refresh() }, 0, 20 * 60)
+        server.scheduler.runTaskTimerAsynchronously(this, Runnable { leaderboardCache.refresh() }, 20, 20 * 60)
 
         /* hook into placeholder api */
         if (!server.pluginManager.isPluginEnabled("PlaceholderAPI")) return
-        Placeholders(description, sessionLogger, leaderboardCache).register()
+        placeholders = Placeholders(description, sessionLogger, leaderboardCache, messages).also { it.register() }
     }
 
     override fun onDisable() {
@@ -48,5 +49,8 @@ class PlaytimePlugin : JavaPlugin(), CoroutineScope {
         runBlocking {
             server.onlinePlayers.forEach { sessionLogger.recordDisconnect(it) }
         }
+
+        /* unregister placeholders to avoid classloader conflicts */
+        if (this::placeholders.isInitialized) placeholders.unregister()
     }
 }
