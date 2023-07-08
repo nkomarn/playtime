@@ -1,19 +1,18 @@
 package gay.kyta.plugin
 
 import gay.kyta.plugin.playtime.command.PlaytimeCommand
+import gay.kyta.plugin.playtime.leaderboard.LeaderboardCache
+import gay.kyta.plugin.playtime.leaderboard.MemoryLeaderboardCache
 import gay.kyta.plugin.playtime.listener.ConnectionListeners
 import gay.kyta.plugin.playtime.message.MessageContainer
 import gay.kyta.plugin.playtime.message.PluginMessageContainer
 import gay.kyta.plugin.playtime.placeholder.Placeholders
 import gay.kyta.plugin.playtime.registerListener
-import gay.kyta.plugin.playtime.leaderboard.LeaderboardCache
-import gay.kyta.plugin.playtime.leaderboard.MemoryLeaderboardCache
 import gay.kyta.plugin.playtime.session.SessionLogger
 import gay.kyta.plugin.playtime.session.SqliteSessionLogger
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
-import kotlinx.coroutines.runBlocking
 import org.bukkit.plugin.java.JavaPlugin
 import revxrsal.commands.bukkit.BukkitCommandHandler
 
@@ -46,9 +45,7 @@ class PlaytimePlugin : JavaPlugin(), CoroutineScope {
 
     override fun onDisable() {
         /* make sure all session data is saved correctly */
-        runBlocking {
-            server.onlinePlayers.forEach { sessionLogger.recordDisconnect(it) }
-        }
+        sessionLogger.shutdown()
 
         /* unregister placeholders to avoid classloader conflicts */
         if (this::placeholders.isInitialized) placeholders.unregister()

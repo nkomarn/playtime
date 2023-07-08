@@ -6,6 +6,7 @@ import gay.kyta.plugin.playtime.leaderboard.LeaderboardPosition
 import gay.kyta.plugin.playtime.leaderboard.Period
 import gay.kyta.plugin.playtime.now
 import gay.kyta.plugin.playtime.toFirstInstant
+import kotlinx.coroutines.runBlocking
 import kotlinx.datetime.Clock
 import kotlinx.datetime.Instant
 import kotlinx.datetime.toJavaInstant
@@ -108,7 +109,9 @@ class SqliteSessionLogger(plugin: PlaytimePlugin) : SessionLogger {
         }
 
     override fun shutdown() {
-
+        Bukkit.getServer().onlinePlayers.forEach {
+            runBlocking { recordDisconnect(it) }
+        }
     }
 
     private fun calculateCutOff(period: Period) = when (period) {
