@@ -1,5 +1,6 @@
 package gay.kyta.plugin
 
+import gay.kyta.plugin.playtime.command.PermissiblePlayerSuggestionProvider
 import gay.kyta.plugin.playtime.command.PlaytimeCommand
 import gay.kyta.plugin.playtime.leaderboard.LeaderboardCache
 import gay.kyta.plugin.playtime.leaderboard.MemoryLeaderboardCache
@@ -32,6 +33,7 @@ class PlaytimePlugin : JavaPlugin(), CoroutineScope {
         registerListener(ConnectionListeners(this, sessionLogger))
 
         /* register commands */
+        commandHandler.autoCompleter.registerSuggestion("players-permissible", PermissiblePlayerSuggestionProvider)
         commandHandler.register(PlaytimeCommand(this, sessionLogger, leaderboardCache, messages))
         commandHandler.registerBrigadier()
 

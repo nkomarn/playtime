@@ -3,6 +3,7 @@ package gay.kyta.plugin.playtime
 import kotlinx.datetime.Clock
 import kotlinx.datetime.toKotlinInstant
 import org.bukkit.Bukkit
+import org.bukkit.OfflinePlayer
 import org.bukkit.event.Listener
 import org.bukkit.plugin.java.JavaPlugin
 import org.joda.time.Period
@@ -20,6 +21,9 @@ fun PeriodFormatter.render(duration: Duration) =
 
 inline fun <reified T : Enum<T>> valueOf(key: String) =
     runCatching { java.lang.Enum.valueOf(T::class.java, key.uppercase()) }.getOrNull()
+
+inline val OfflinePlayer.username
+    get() = name ?: "???"
 
 fun now() = Clock.System.now()
 fun LocalDate.toFirstInstant() = atStartOfDay(ZoneId.systemDefault()).toInstant().toKotlinInstant()

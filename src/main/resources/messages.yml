@@ -1,9 +1,10 @@
 # this file uses adventure mini-message formatting
 # for quick and easy formatting, check out the generator @ https://webui.advntr.dev
 
-command_playtime_response: "Your total playtime is <playtime>!<newline><gray>You've joined <sessions> times.<newline><gray>Your current session is <session>."
-command_playtime_weekly: "<gold>You have played for <playtime> this week."
-command_playtime_monthly: "<gold>You have played for <playtime> this month."
+command_playtime_response: "<target>'s total playtime is <playtime>!<newline><gray><target> joined <sessions> times.<newline><gray>Their current session is <session>."
+command_playtime_weekly: "<gold><target> played for <playtime> this week."
+command_playtime_monthly: "<gold><target> played for <playtime> this month."
 command_playtime_leaderboard_entry: "<green><position>. <aqua><username>: <yellow><playtime>"
+command_playtime_leaderboard_empty: "<italic><gray>The leaderboard is empty."
 
 placeholder_leaderboard_position: "<white><username>, <dark_green><playtime>"
