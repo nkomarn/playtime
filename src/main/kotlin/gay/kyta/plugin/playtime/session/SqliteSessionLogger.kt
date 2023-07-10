@@ -110,7 +110,7 @@ class SqliteSessionLogger(plugin: PlaytimePlugin) : SessionLogger {
                     val username = it[Sessions.player].fetchPlayerName()
                     val playtime = it[durationSum]!!.toKotlinDuration() + currentSession
                     LeaderboardPosition(username, playtime)
-                }
+                }.sortedByDescending { it.playtime }
         }
 
     override fun shutdown() {
